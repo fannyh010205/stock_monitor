@@ -1,0 +1,43 @@
+name: 📈 实时行情监控
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  market-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Get today's date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: 获取状态缓存
+        uses: actions/cache@v4
+        with:
+          path: data/state.json
+          key: monitor-state-${{ runner.os }}-${{ steps.date.outputs.date }}
+          restore-keys: |
+            monitor-state-${{ runner.os }}-
+
+      - name: 运行行情检测
+        env:
+          EMAIL_SENDER:   ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python scripts/check.py
