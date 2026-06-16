@@ -324,9 +324,9 @@ charset.add_charset("utf-8", charset.QP, charset.QP, "utf-8")
 
 
 def send_email(subject, html):
-    sender   = os.environ["EMAIL_SENDER"]
-    password = os.environ["EMAIL_PASSWORD"]
-    receiver = os.environ["EMAIL_RECEIVER"]
+    sender   = os.environ["EMAIL_SENDER"].strip()
+    password = os.environ["EMAIL_PASSWORD"].replace("\xa0", "").replace(" ", "").strip()
+    receiver = os.environ["EMAIL_RECEIVER"].strip()
 
     subject = subject.replace("\xa0", " ")
     html    = html.replace("\xa0", " ")
