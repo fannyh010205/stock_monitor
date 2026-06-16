@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-stock monitor — GitHub Actions version
-- read email configs from env（GitHub Secrets）
-- from config/config.yaml get the target and threashold
-- status permanent through GitHub Actions Cache
-- support two modes: default annomaly monitor / daily summary (REPORT_MODE=true)
-"""
-
 import os, sys, json, logging, smtplib, requests, yaml, pytz, time
 import yfinance as yf
 from datetime import datetime
@@ -14,22 +6,16 @@ from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-# path ──────────────────────────────────────────────────────
 BASE    = Path(__file__).parent.parent
 CFG_F   = BASE / "config" / "config.yaml"
 STATE_F = BASE / "data" / "state.json"
 HOLD_F  = BASE / "data" / "mnvt_holdings.json"
 
-logging.basicConfig(level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 ET  = pytz.timezone("America/New_York")
-
 REPORT_MODE = os.environ.get("REPORT_MODE", "").lower() == "true"
 
-# ═══════════════════════════════════════════════════════════════
-# config and status
-# ═══════════════════════════════════════════════════════════════
 def load_config():
     with open(CFG_F) as f:
         return yaml.safe_load(f)
@@ -56,9 +42,6 @@ def cooled_down(state, key, minutes):
 def mark(state, key):
     state["last_alerts"][key] = datetime.now().isoformat()
 
-# ═══════════════════════════════════════════════════════════════
-# fetch data
-# ═══════════════════════════════════════════════════════════════
 def fetch_stock(symbol):
     for attempt in range(3):
         try:
@@ -79,7 +62,7 @@ def fetch_stock(symbol):
                 "avg_volume": int(avg_vol) if avg_vol else None,
             }
         except Exception as e:
-            log.warning(f"{symbol} 第{attempt+1}次获取失败: {e}")
+            log.warning(f"{symbol} fetch attempt {attempt+1} failed: {e}")
             time.sleep(2)
     return None
 
@@ -94,7 +77,7 @@ def fetch_crypto(ids):
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        log.error(f"CoinGecko 请求失败: {e}")
+        log.error(f"CoinGecko request failed: {e}")
         return {}
 
 def fetch_mnvt_nav():
@@ -112,9 +95,6 @@ def load_holdings():
             pass
     return []
 
-# ═══════════════════════════════════════════════════════════════
-# monitor anomaly
-# ═══════════════════════════════════════════════════════════════
 def check_stock(cfg_item, data, state, cooldown):
     alerts = []
     if not data or data["price"] is None:
@@ -129,10 +109,10 @@ def check_stock(cfg_item, data, state, cooldown):
     if abs(pct) >= thr:
         key = f"{sym}_pct"
         if cooled_down(state, key, cooldown):
-            icon = "up" if pct > 0 else "down"
-            alerts.append({"type": "涨跌幅异动", "symbol": sym,
+            direction = "UP" if pct > 0 else "DOWN"
+            alerts.append({"type": "Price Move", "symbol": sym,
                 "name": cfg_item["name"],
-                "detail": f"{'+' if pct>0 else ''}{pct:.2f}%，当前 ${price:.2f}",
+                "detail": f"{direction} {pct:+.2f}%, now ${price:.2f}",
                 "key": key, "urgency": "high"})
 
     pa    = cfg_item.get("price_alerts") or {}
@@ -142,25 +122,25 @@ def check_stock(cfg_item, data, state, cooldown):
     if above and prev and prev < above <= price:
         key = f"{sym}_above_{above}"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "突破上限", "symbol": sym,
+            alerts.append({"type": "Broke Above", "symbol": sym,
                 "name": cfg_item["name"],
-                "detail": f"突破 ${above} 关键位，当前 ${price:.2f}",
+                "detail": f"Broke above ${above}, now ${price:.2f}",
                 "key": key, "urgency": "high"})
     if below and prev and prev > below >= price:
         key = f"{sym}_below_{below}"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "跌破下限", "symbol": sym,
+            alerts.append({"type": "Broke Below", "symbol": sym,
                 "name": cfg_item["name"],
-                "detail": f"跌破 ${below} 关键位，当前 ${price:.2f}",
+                "detail": f"Broke below ${below}, now ${price:.2f}",
                 "key": key, "urgency": "high"})
 
     vm = cfg_item.get("volume_multiplier", 2.0)
     if vol and avg_v and vol >= avg_v * vm:
         key = f"{sym}_vol"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "成交量异常", "symbol": sym,
+            alerts.append({"type": "Volume Spike", "symbol": sym,
                 "name": cfg_item["name"],
-                "detail": f"成交量 {vol:,}，是均量的 {vol/avg_v:.1f}x，价格 ${price:.2f}",
+                "detail": f"Volume {vol:,} = {vol/avg_v:.1f}x avg, price ${price:.2f}",
                 "key": key, "urgency": "medium"})
 
     state["prev_prices"][sym] = price
@@ -182,9 +162,10 @@ def check_crypto(cfg_item, cg, state, cooldown):
     if abs(pct) >= thr:
         key = f"{ticker}_pct"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "涨跌幅异动", "symbol": ticker,
+            direction = "UP" if pct > 0 else "DOWN"
+            alerts.append({"type": "Price Move", "symbol": ticker,
                 "name": cfg_item["name"],
-                "detail": f"{'+' if pct>0 else ''}{pct:.2f}%，当前 ${price:,.2f}",
+                "detail": f"{direction} {pct:+.2f}%, now ${price:,.2f}",
                 "key": key, "urgency": "high"})
 
     pa    = cfg_item.get("price_alerts") or {}
@@ -194,16 +175,16 @@ def check_crypto(cfg_item, cg, state, cooldown):
     if above and prev and prev < above <= price:
         key = f"{ticker}_above_{above}"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "突破上限", "symbol": ticker,
+            alerts.append({"type": "Broke Above", "symbol": ticker,
                 "name": cfg_item["name"],
-                "detail": f"突破 ${above:,.0f}，当前 ${price:,.2f}",
+                "detail": f"Broke above ${above:,.0f}, now ${price:,.2f}",
                 "key": key, "urgency": "high"})
     if below and prev and prev > below >= price:
         key = f"{ticker}_below_{below}"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "跌破下限", "symbol": ticker,
+            alerts.append({"type": "Broke Below", "symbol": ticker,
                 "name": cfg_item["name"],
-                "detail": f"跌破 ${below:,.0f}，当前 ${price:,.2f}",
+                "detail": f"Broke below ${below:,.0f}, now ${price:,.2f}",
                 "key": key, "urgency": "high"})
 
     state["prev_prices"][ticker] = price
@@ -220,42 +201,35 @@ def check_mnvt_nav_spread(mnvt_data, nav, cfg, state, cooldown):
     if spread <= disc_t:
         key = "mnvt_discount"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "MNVT 折价套利", "symbol": "MNVT",
+            alerts.append({"type": "MNVT Discount", "symbol": "MNVT",
                 "name": "Moonvest ETF",
-                "detail": f"市价 ${price:.2f} vs NAV ${nav:.2f}，折价 {spread:.2f}%，关注买入机会",
+                "detail": f"Price ${price:.2f} vs NAV ${nav:.2f}, discount {spread:.2f}% - potential buy",
                 "key": key, "urgency": "high"})
     elif spread >= prem_t:
         key = "mnvt_premium"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "MNVT 溢价风险", "symbol": "MNVT",
+            alerts.append({"type": "MNVT Premium", "symbol": "MNVT",
                 "name": "Moonvest ETF",
-                "detail": f"市价 ${price:.2f} vs NAV ${nav:.2f}，溢价 {spread:.2f}%，注意追高风险",
+                "detail": f"Price ${price:.2f} vs NAV ${nav:.2f}, premium {spread:.2f}% - watch risk",
                 "key": key, "urgency": "medium"})
     return alerts
 
-# ═══════════════════════════════════════════════════════════════
-# construct email
-# ═══════════════════════════════════════════════════════════════
 STYLE = """
 body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:20px}
-.card{max-width:680px;margin:0 auto;background:#fff;border-radius:10px;
-      overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.card{max-width:680px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)}
 .header{padding:20px 24px;color:#fff}
 .header h2{margin:0;font-size:18px}
 .header p{margin:4px 0 0;font-size:12px;opacity:.75}
 table{width:100%;border-collapse:collapse;font-size:14px}
-th{padding:9px 14px;text-align:left;color:#777;font-size:12px;
-   background:#f9f9f9;border-bottom:1px solid #eee}
+th{padding:9px 14px;text-align:left;color:#777;font-size:12px;background:#f9f9f9;border-bottom:1px solid #eee}
 td{padding:9px 14px;border-bottom:1px solid #f2f2f2;color:#333}
 .up{color:#2e7d32;font-weight:600}
 .dn{color:#c62828;font-weight:600}
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;
-       font-size:11px;font-weight:600}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 .high{background:#fff3f3;color:#c62828}
 .medium{background:#fff8e1;color:#e65100}
 .footer{padding:14px 24px;font-size:11px;color:#aaa;border-top:1px solid #eee}
-.nav-bar{margin:16px 24px;padding:12px 18px;background:#e8f5e9;
-         border-radius:6px;border-left:4px solid #43a047;font-size:14px}
+.nav-bar{margin:16px 24px;padding:12px 18px;background:#e8f5e9;border-radius:6px;border-left:4px solid #43a047;font-size:14px}
 """
 
 def pct_span(pct):
@@ -274,14 +248,12 @@ def alert_email(alerts):
     syms = ", ".join(dict.fromkeys(a["symbol"] for a in alerts))
     subj = f"Market Alert: {syms}"
     html = f"""<html><head><style>{STYLE}</style></head><body>
-        <div class="card">
-          <div class="header" style="background:#b71c1c">
-            <h2>Market Alert</h2><p>{now}</p></div>
-          <table><thead><tr>
-            <th>Type</th><th>Symbol</th><th>Detail</th>
-          </tr></thead><tbody>{rows}</tbody></table>
-          <div class="footer">Auto-generated. Not investment advice.</div>
-        </div></body></html>"""
+      <div class="card">
+        <div class="header" style="background:#b71c1c"><h2>Market Alert</h2><p>{now}</p></div>
+        <table><thead><tr><th>Type</th><th>Symbol</th><th>Detail</th></tr></thead>
+        <tbody>{rows}</tbody></table>
+        <div class="footer">Auto-generated. Not investment advice.</div>
+      </div></body></html>"""
     return subj, html
 
 def daily_email(stock_rows, crypto_rows, nav_info, holdings):
@@ -291,78 +263,60 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings):
     def vol_badge(vol, avg):
         if not vol or not avg: return ""
         r = vol / avg
-        if r >= 3: return f' <span class="badge high">HOT {r:.1f}x avg vol</span>'
-        if r >= 2: return f' <span class="badge medium">{r:.1f}x avg vol</span>'
+        if r >= 3: return f'<span class="badge high">HOT {r:.1f}x vol</span>'
+        if r >= 2: return f'<span class="badge medium">{r:.1f}x vol</span>'
         return ""
 
     s_rows = "".join(f"""<tr>
-      <td><b>{r['symbol']}</b></td>
-      <td style="color:#555">{r['name']}</td>
-      <td>${r['price']:.2f}</td>
-      <td>{pct_span(r['pct_change'])}</td>
+      <td><b>{r['symbol']}</b></td><td>{r['name']}</td>
+      <td>${r['price']:.2f}</td><td>{pct_span(r['pct_change'])}</td>
       <td>{vol_badge(r.get('volume'), r.get('avg_volume'))}</td>
     </tr>""" for r in stock_rows)
 
     c_rows = "".join(f"""<tr>
-      <td><b>{r['ticker']}</b></td>
-      <td style="color:#555">{r['name']}</td>
-      <td>${r['price']:,.2f}</td>
-      <td>{pct_span(r['pct_change'])}</td>
-      <td></td>
+      <td><b>{r['ticker']}</b></td><td>{r['name']}</td>
+      <td>${r['price']:,.2f}</td><td>{pct_span(r['pct_change'])}</td><td></td>
     </tr>""" for r in crypto_rows)
 
     nav_section = ""
     if nav_info:
         sp  = nav_info["spread"]
         cls = "up" if sp > 0 else "dn"
-        hint = " <b>Discount - potential buy opportunity</b>" if sp < -1.0 else (
-               " <b>Premium - watch for overvaluation</b>" if sp > 2.0 else "")
+        hint = " <b>Discount - potential buy</b>" if sp < -1.0 else (
+               " <b>Premium - watch risk</b>" if sp > 2.0 else "")
         nav_section = f"""<div class="nav-bar">
-          <b>MNVT NAV Monitor</b> &nbsp;
-          Price <b>${nav_info['price']:.2f}</b> &nbsp;|&nbsp;
-          NAV <b>${nav_info['nav']:.2f}</b> &nbsp;|&nbsp;
-          Spread <b class="{cls}">{sp:+.2f}%</b>{hint}
-        </div>"""
+          <b>MNVT NAV</b> &nbsp; Price <b>${nav_info['price']:.2f}</b> | NAV <b>${nav_info['nav']:.2f}</b>
+          | Spread <b class="{cls}">{sp:+.2f}%</b>{hint}</div>"""
 
     hold_section = ""
     if holdings:
-        h_rows = "".join(f"""<tr>
-          <td><b>{h['symbol']}</b></td>
-          <td style="color:#777">{h.get('weight','-')}%</td>
-        </tr>""" for h in holdings[:15])
+        h_rows = "".join(f"<tr><td><b>{h['symbol']}</b></td><td>{h.get('weight','-')}%</td></tr>"
+                         for h in holdings[:15])
         hold_section = f"""<div style="padding:0 24px 16px">
           <p style="font-size:12px;color:#888;margin:16px 0 8px">MNVT Holdings</p>
-          <table style="max-width:300px">
-            <thead><tr><th>Symbol</th><th>Weight</th></tr></thead>
-            <tbody>{h_rows}</tbody>
-          </table></div>"""
+          <table style="max-width:300px"><thead><tr><th>Symbol</th><th>Weight</th></tr></thead>
+          <tbody>{h_rows}</tbody></table></div>"""
 
     subj = f"Daily Market Summary {today}"
     html = f"""<html><head><style>{STYLE}</style></head><body>
-        <div class="card">
-          <div class="header" style="background:#0d47a1">
-            <h2>Daily Market Summary</h2><p>{now}</p></div>
-          {nav_section}
-          <div style="padding:0 24px 4px">
-            <p style="font-size:12px;color:#888;margin:16px 0 8px">Stocks / ETFs</p>
-            <table><thead><tr>
-              <th>Symbol</th><th>Name</th><th>Price</th><th>Change</th><th>Volume</th>
-            </tr></thead><tbody>{s_rows}</tbody></table>
-          </div>
-          <div style="padding:0 24px 4px">
-            <p style="font-size:12px;color:#888;margin:16px 0 8px">Crypto</p>
-            <table><thead><tr>
-              <th>Symbol</th><th>Name</th><th>Price</th><th>24h Change</th><th></th>
-            </tr></thead><tbody>{c_rows}</tbody></table>
-          </div>
-          {hold_section}
-          <div class="footer">Data: Yahoo Finance / CoinGecko. Not investment advice.</div>
-        </div></body></html>"""
+      <div class="card">
+        <div class="header" style="background:#0d47a1"><h2>Daily Market Summary</h2><p>{now}</p></div>
+        {nav_section}
+        <div style="padding:0 24px 4px">
+          <p style="font-size:12px;color:#888;margin:16px 0 8px">Stocks / ETFs</p>
+          <table><thead><tr><th>Symbol</th><th>Name</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
+          <tbody>{s_rows}</tbody></table>
+        </div>
+        <div style="padding:0 24px 4px">
+          <p style="font-size:12px;color:#888;margin:16px 0 8px">Crypto</p>
+          <table><thead><tr><th>Symbol</th><th>Name</th><th>Price</th><th>24h Change</th><th></th></tr></thead>
+          <tbody>{c_rows}</tbody></table>
+        </div>
+        {hold_section}
+        <div class="footer">Data: Yahoo Finance / CoinGecko. Not investment advice.</div>
+      </div></body></html>"""
     return subj, html
 
-# ═══════════════════════════════════════════════════════════════
-# send_email
-# ═══════════════════════════════════════════════════════════════
 def send_email(subject, html):
     sender   = os.environ["EMAIL_SENDER"]
     password = os.environ["EMAIL_PASSWORD"]
@@ -382,9 +336,6 @@ def send_email(subject, html):
         log.error(f"Email failed: {e}")
         sys.exit(1)
 
-# ═══════════════════════════════════════════════════════════════
-# main logic
-# ═══════════════════════════════════════════════════════════════
 def main():
     cfg      = load_config()
     state    = load_state()
@@ -455,7 +406,6 @@ def main():
         log.info("No alerts triggered.")
 
     save_state(state)
-
 
 if __name__ == "__main__":
     main()
