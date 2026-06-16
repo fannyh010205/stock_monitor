@@ -317,24 +317,72 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings):
       </div></body></html>"""
     return subj, html
 
+from email.header import Header
+from email import charset
+
+charset.add_charset("utf-8", charset.QP, charset.QP, "utf-8")
+
+
 def send_email(subject, html):
     sender   = os.environ["EMAIL_SENDER"]
     password = os.environ["EMAIL_PASSWORD"]
     receiver = os.environ["EMAIL_RECEIVER"]
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = receiver
-    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    subject = subject.replace("\xa0", " ")
+    html    = html.replace("\xa0", " ")
+
+    # DEBUG
+    log.info(f"Subject = {repr(subject)}")
+    log.info(f"HTML length = {len(html)}")
+
     try:
+        msg = MIMEMultipart("alternative")
+
+        msg["Subject"] = Header(subject, "utf-8")
+        msg["From"]    = sender
+        msg["To"]      = receiver
+
+        html_part = MIMEText(
+            html,
+            "html",
+            "utf-8"
+        )
+
+        msg.attach(html_part)
+
         with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.ehlo()
             s.starttls()
+            s.ehlo()
+
             s.login(sender, password)
-            s.send_message(msg)
-        log.info(f"Email sent: {subject}")
+
+            raw_msg = msg.as_string()
+
+            s.sendmail(
+                sender,
+                [receiver],
+                raw_msg.encode("utf-8")
+            )
+
+        log.info(f"Email sent successfully: {subject}")
+
     except Exception as e:
-        log.error(f"Email failed: {e}")
-        sys.exit(1)
+
+        for idx, ch in enumerate(html):
+            if ord(ch) > 127:
+                log.warning(
+                    f"Non-ASCII char at {idx}: "
+                    f"{repr(ch)} ({ord(ch)})"
+                )
+                print(
+                    f"NON_ASCII[{i}] = "
+                    f"{repr(ch)} "
+                    f"({ord(ch)})"
+                )
+
+        log.exception("Email send failed")
+        raise
 
 def main():
     cfg      = load_config()
