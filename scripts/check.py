@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-股票监控脚本 — GitHub Actions 版
-- 从环境变量读取邮件配置（GitHub Secrets）
-- 从 config/config.yaml 读取监控标的和阈值
-- 状态（冷却期）通过 GitHub Actions Cache 持久化
-- 支持两种模式：异动检测（默认）/ 每日汇总（REPORT_MODE=true）
+stock monitor — GitHub Actions version
+- read email configs from env（GitHub Secrets）
+- from config/config.yaml get the target and threashold
+- status permanent through GitHub Actions Cache
+- support two modes: default annomaly monitor / daily summary (REPORT_MODE=true)
 """
 
 import os, sys, json, logging, smtplib, requests, yaml, pytz, time
@@ -14,7 +14,7 @@ from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-# ── 路径 ──────────────────────────────────────────────────────
+# path ──────────────────────────────────────────────────────
 BASE    = Path(__file__).parent.parent
 CFG_F   = BASE / "config" / "config.yaml"
 STATE_F = BASE / "data" / "state.json"
@@ -28,7 +28,7 @@ ET  = pytz.timezone("America/New_York")
 REPORT_MODE = os.environ.get("REPORT_MODE", "").lower() == "true"
 
 # ═══════════════════════════════════════════════════════════════
-# 配置 & 状态
+# config and status
 # ═══════════════════════════════════════════════════════════════
 def load_config():
     with open(CFG_F) as f:
@@ -57,7 +57,7 @@ def mark(state, key):
     state["last_alerts"][key] = datetime.now().isoformat()
 
 # ═══════════════════════════════════════════════════════════════
-# 数据获取
+# fetch data
 # ═══════════════════════════════════════════════════════════════
 def fetch_stock(symbol):
     for attempt in range(3):
@@ -113,7 +113,7 @@ def load_holdings():
     return []
 
 # ═══════════════════════════════════════════════════════════════
-# 异动检测
+# monitor anomaly
 # ═══════════════════════════════════════════════════════════════
 def check_stock(cfg_item, data, state, cooldown):
     alerts = []
@@ -234,7 +234,7 @@ def check_mnvt_nav_spread(mnvt_data, nav, cfg, state, cooldown):
     return alerts
 
 # ═══════════════════════════════════════════════════════════════
-# 邮件构建
+# construct email
 # ═══════════════════════════════════════════════════════════════
 STYLE = """
 body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:20px}
@@ -361,7 +361,7 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings):
     return subj, html
 
 # ═══════════════════════════════════════════════════════════════
-# 发送邮件 — 使用 send_message() 避免编码问题
+# send_email
 # ═══════════════════════════════════════════════════════════════
 def send_email(subject, html):
     sender   = os.environ["EMAIL_SENDER"]
@@ -376,14 +376,14 @@ def send_email(subject, html):
         with smtplib.SMTP("smtp.gmail.com", 587) as s:
             s.starttls()
             s.login(sender, password)
-            s.send_message(msg)   # send_message 自动处理编码，不用 as_string()
+            s.send_message(msg)
         log.info(f"Email sent: {subject}")
     except Exception as e:
         log.error(f"Email failed: {e}")
         sys.exit(1)
 
 # ═══════════════════════════════════════════════════════════════
-# 主逻辑
+# main logic
 # ═══════════════════════════════════════════════════════════════
 def main():
     cfg      = load_config()
