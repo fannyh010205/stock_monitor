@@ -1,0 +1,44 @@
+name: 📊 每日汇总报告
+
+on:
+  schedule:
+    - cron: "0 13 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  daily-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Get current week
+        id: week
+        run: echo "week=$(date +'%Y-%W')" >> $GITHUB_OUTPUT
+
+      - name: 获取 MNVT 持仓缓存
+        uses: actions/cache@v4
+        with:
+          path: data/mnvt_holdings.json
+          key: mnvt-holdings-${{ runner.os }}-${{ steps.week.outputs.week }}
+          restore-keys: |
+            mnvt-holdings-${{ runner.os }}-
+
+      - name: 发送每日汇总邮件
+        env:
+          EMAIL_SENDER:   ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          REPORT_MODE:    "true"
+        run: python scripts/check.py
