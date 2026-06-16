@@ -1,0 +1,89 @@
+# ============================================================
+# 股票监控配置文件
+# 修改此处来调整监控标的和报警阈值
+# 邮件账号密码不在此处填写 → 填入 GitHub Secrets
+# ============================================================
+
+watchlist:
+
+  stocks:
+    - symbol: "MNVT"
+      name: "Moonvest ETF"
+      type: "etf"
+      alert_pct: 2.0           # 单日涨跌超过 2% 触发提醒
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null            # 示例：设为 50.0 则突破$50时提醒
+        below: null
+
+    - symbol: "GBTC"
+      name: "Grayscale Bitcoin Trust"
+      type: "etf"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "MU"
+      name: "Micron Technology"
+      type: "stock"
+      alert_pct: 3.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null            # 例如：120.0
+        below: null            # 例如：80.0
+
+    - symbol: "SPY"
+      name: "S&P 500 ETF（大盘）"
+      type: "index"
+      alert_pct: 1.5
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "QQQ"
+      name: "Nasdaq 100 ETF（大盘）"
+      type: "index"
+      alert_pct: 2.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+  crypto:
+    - symbol: "bitcoin"
+      ticker: "BTC"
+      name: "Bitcoin"
+      alert_pct: 5.0
+      price_alerts:
+        above: null            # 例如：100000
+        below: null            # 例如：60000
+
+    - symbol: "ethereum"
+      ticker: "ETH"
+      name: "Ethereum"
+      alert_pct: 5.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "cardano"
+      ticker: "ADA"
+      name: "Cardano"
+      alert_pct: 7.0
+      price_alerts:
+        above: null
+        below: null
+
+# MNVT 折溢价监控
+mnvt_nav:
+  enabled: true
+  discount_alert_pct: -1.5    # 折价超过 1.5% → 提醒买入机会
+  premium_alert_pct: 2.0      # 溢价超过 2.0% → 提醒风险
+
+# 同一标的同类报警冷却时间（分钟）
+# 防止5分钟轮询期间反复发同一条提醒
+cooldown:
+  same_alert_cooldown_minutes: 60
