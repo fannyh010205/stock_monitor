@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.header import Header
 
 # ── 路径 ──────────────────────────────────────────────────────
 BASE   = Path(__file__).parent.parent
@@ -376,10 +377,10 @@ def send_email(subject, html):
     password = os.environ["EMAIL_PASSWORD"]
     receiver = os.environ["EMAIL_RECEIVER"]
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    msg["Subject"] = Header(subject, "utf-8").encode()
     msg["From"]    = sender
     msg["To"]      = receiver
-    msg.attach(MIMEText(html, "html"))
+    msg.attach(MIMEText(html, "html", "utf-8"))
     try:
         with smtplib.SMTP("smtp.gmail.com", 587) as s:
             s.starttls()
