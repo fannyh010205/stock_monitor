@@ -13,11 +13,10 @@ from datetime import datetime
 from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.header import Header
 
 # ── 路径 ──────────────────────────────────────────────────────
-BASE   = Path(__file__).parent.parent
-CFG_F  = BASE / "config" / "config.yaml"
+BASE    = Path(__file__).parent.parent
+CFG_F   = BASE / "config" / "config.yaml"
 STATE_F = BASE / "data" / "state.json"
 HOLD_F  = BASE / "data" / "mnvt_holdings.json"
 
@@ -26,7 +25,6 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 ET  = pytz.timezone("America/New_York")
 
-# ── 模式判断 ──────────────────────────────────────────────────
 REPORT_MODE = os.environ.get("REPORT_MODE", "").lower() == "true"
 
 # ═══════════════════════════════════════════════════════════════
@@ -100,7 +98,6 @@ def fetch_crypto(ids):
         return {}
 
 def fetch_mnvt_nav():
-    """尝试从 yfinance 获取 MNVT NAV"""
     try:
         info = yf.Ticker("MNVT").info
         return info.get("navPrice") or info.get("nav")
@@ -128,18 +125,16 @@ def check_stock(cfg_item, data, state, cooldown):
     vol   = data["volume"]
     avg_v = data["avg_volume"]
 
-    # 涨跌幅
     thr = cfg_item.get("alert_pct", 3.0)
     if abs(pct) >= thr:
         key = f"{sym}_pct"
         if cooled_down(state, key, cooldown):
-            icon = "📈" if pct > 0 else "📉"
+            icon = "up" if pct > 0 else "down"
             alerts.append({"type": "涨跌幅异动", "symbol": sym,
                 "name": cfg_item["name"],
-                "detail": f"{icon} {pct:+.2f}%，当前 ${price:.2f}",
+                "detail": f"{'+' if pct>0 else ''}{pct:.2f}%，当前 ${price:.2f}",
                 "key": key, "urgency": "high"})
 
-    # 价格突破
     pa    = cfg_item.get("price_alerts") or {}
     prev  = state["prev_prices"].get(sym)
     above = pa.get("above")
@@ -159,7 +154,6 @@ def check_stock(cfg_item, data, state, cooldown):
                 "detail": f"跌破 ${below} 关键位，当前 ${price:.2f}",
                 "key": key, "urgency": "high"})
 
-    # 成交量放大
     vm = cfg_item.get("volume_multiplier", 2.0)
     if vol and avg_v and vol >= avg_v * vm:
         key = f"{sym}_vol"
@@ -188,10 +182,9 @@ def check_crypto(cfg_item, cg, state, cooldown):
     if abs(pct) >= thr:
         key = f"{ticker}_pct"
         if cooled_down(state, key, cooldown):
-            icon = "🚀" if pct > 0 else "🔻"
             alerts.append({"type": "涨跌幅异动", "symbol": ticker,
                 "name": cfg_item["name"],
-                "detail": f"{icon} {pct:+.2f}%，当前 ${price:,.2f}",
+                "detail": f"{'+' if pct>0 else ''}{pct:.2f}%，当前 ${price:,.2f}",
                 "key": key, "urgency": "high"})
 
     pa    = cfg_item.get("price_alerts") or {}
@@ -227,14 +220,14 @@ def check_mnvt_nav_spread(mnvt_data, nav, cfg, state, cooldown):
     if spread <= disc_t:
         key = "mnvt_discount"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "🏷️ MNVT 折价套利", "symbol": "MNVT",
+            alerts.append({"type": "MNVT 折价套利", "symbol": "MNVT",
                 "name": "Moonvest ETF",
                 "detail": f"市价 ${price:.2f} vs NAV ${nav:.2f}，折价 {spread:.2f}%，关注买入机会",
                 "key": key, "urgency": "high"})
     elif spread >= prem_t:
         key = "mnvt_premium"
         if cooled_down(state, key, cooldown):
-            alerts.append({"type": "⚠️ MNVT 溢价风险", "symbol": "MNVT",
+            alerts.append({"type": "MNVT 溢价风险", "symbol": "MNVT",
                 "name": "Moonvest ETF",
                 "detail": f"市价 ${price:.2f} vs NAV ${nav:.2f}，溢价 {spread:.2f}%，注意追高风险",
                 "key": key, "urgency": "medium"})
@@ -266,8 +259,8 @@ td{padding:9px 14px;border-bottom:1px solid #f2f2f2;color:#333}
 """
 
 def pct_span(pct):
-    cls = "up" if pct > 0 else ("dn" if pct < 0 else "")
-    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "─")
+    cls   = "up" if pct > 0 else ("dn" if pct < 0 else "")
+    arrow = "&#9650;" if pct > 0 else ("&#9660;" if pct < 0 else "&#8212;")
     return f'<span class="{cls}">{arrow} {abs(pct):.2f}%</span>'
 
 def alert_email(alerts):
@@ -277,30 +270,29 @@ def alert_email(alerts):
         <td><b>{a['symbol']}</b></td>
         <td>{a['detail']}</td>
       </tr>""" for a in alerts)
-    now = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
-    syms = "、".join(dict.fromkeys(a["symbol"] for a in alerts))
-    return (
-        f"⚡ 市场异动：{syms}",
-        f"""<html><head><style>{STYLE}</style></head><body>
+    now  = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
+    syms = ", ".join(dict.fromkeys(a["symbol"] for a in alerts))
+    subj = f"Market Alert: {syms}"
+    html = f"""<html><head><style>{STYLE}</style></head><body>
         <div class="card">
           <div class="header" style="background:#b71c1c">
-            <h2>⚡ 市场异动提醒</h2><p>{now}</p></div>
+            <h2>Market Alert</h2><p>{now}</p></div>
           <table><thead><tr>
-            <th>类型</th><th>标的</th><th>详情</th>
+            <th>Type</th><th>Symbol</th><th>Detail</th>
           </tr></thead><tbody>{rows}</tbody></table>
-          <div class="footer">此邮件由自动监控系统发送，不构成投资建议。</div>
+          <div class="footer">Auto-generated. Not investment advice.</div>
         </div></body></html>"""
-    )
+    return subj, html
 
 def daily_email(stock_rows, crypto_rows, nav_info, holdings):
-    now  = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
+    now   = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
     today = datetime.now(ET).strftime("%Y-%m-%d")
 
     def vol_badge(vol, avg):
         if not vol or not avg: return ""
         r = vol / avg
-        if r >= 3: return f' <span class="badge high">🔥 {r:.1f}x 均量</span>'
-        if r >= 2: return f' <span class="badge medium">⚡ {r:.1f}x 均量</span>'
+        if r >= 3: return f' <span class="badge high">HOT {r:.1f}x avg vol</span>'
+        if r >= 2: return f' <span class="badge medium">{r:.1f}x avg vol</span>'
         return ""
 
     s_rows = "".join(f"""<tr>
@@ -321,15 +313,15 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings):
 
     nav_section = ""
     if nav_info:
-        sp = nav_info["spread"]
+        sp  = nav_info["spread"]
         cls = "up" if sp > 0 else "dn"
-        hint = " 💡 <b>存在折价，关注买入机会</b>" if sp < -1.0 else (
-               " ⚠️ <b>溢价偏高，注意追高风险</b>" if sp > 2.0 else "")
+        hint = " <b>Discount - potential buy opportunity</b>" if sp < -1.0 else (
+               " <b>Premium - watch for overvaluation</b>" if sp > 2.0 else "")
         nav_section = f"""<div class="nav-bar">
-          <b>MNVT 净值监控</b>　
-          市价 <b>${nav_info['price']:.2f}</b> &nbsp;|&nbsp;
+          <b>MNVT NAV Monitor</b> &nbsp;
+          Price <b>${nav_info['price']:.2f}</b> &nbsp;|&nbsp;
           NAV <b>${nav_info['nav']:.2f}</b> &nbsp;|&nbsp;
-          折溢价 <b class="{cls}">{sp:+.2f}%</b>{hint}
+          Spread <b class="{cls}">{sp:+.2f}%</b>{hint}
         </div>"""
 
     hold_section = ""
@@ -339,45 +331,44 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings):
           <td style="color:#777">{h.get('weight','-')}%</td>
         </tr>""" for h in holdings[:15])
         hold_section = f"""<div style="padding:0 24px 16px">
-          <p style="font-size:12px;color:#888;margin:16px 0 8px">MNVT 持仓参考</p>
+          <p style="font-size:12px;color:#888;margin:16px 0 8px">MNVT Holdings</p>
           <table style="max-width:300px">
-            <thead><tr><th>标的</th><th>权重</th></tr></thead>
+            <thead><tr><th>Symbol</th><th>Weight</th></tr></thead>
             <tbody>{h_rows}</tbody>
           </table></div>"""
 
-    return (
-        f"📊 每日市场汇总 {today}",
-        f"""<html><head><style>{STYLE}</style></head><body>
+    subj = f"Daily Market Summary {today}"
+    html = f"""<html><head><style>{STYLE}</style></head><body>
         <div class="card">
           <div class="header" style="background:#0d47a1">
-            <h2>📊 每日市场监控汇总</h2><p>{now}</p></div>
+            <h2>Daily Market Summary</h2><p>{now}</p></div>
           {nav_section}
           <div style="padding:0 24px 4px">
-            <p style="font-size:12px;color:#888;margin:16px 0 8px">美股 / ETF / 大盘</p>
+            <p style="font-size:12px;color:#888;margin:16px 0 8px">Stocks / ETFs</p>
             <table><thead><tr>
-              <th>代码</th><th>名称</th><th>价格</th><th>涨跌</th><th>成交量</th>
+              <th>Symbol</th><th>Name</th><th>Price</th><th>Change</th><th>Volume</th>
             </tr></thead><tbody>{s_rows}</tbody></table>
           </div>
           <div style="padding:0 24px 4px">
-            <p style="font-size:12px;color:#888;margin:16px 0 8px">加密货币</p>
+            <p style="font-size:12px;color:#888;margin:16px 0 8px">Crypto</p>
             <table><thead><tr>
-              <th>代码</th><th>名称</th><th>价格</th><th>24h 涨跌</th><th></th>
+              <th>Symbol</th><th>Name</th><th>Price</th><th>24h Change</th><th></th>
             </tr></thead><tbody>{c_rows}</tbody></table>
           </div>
           {hold_section}
-          <div class="footer">数据来源：Yahoo Finance / CoinGecko。不构成投资建议。</div>
+          <div class="footer">Data: Yahoo Finance / CoinGecko. Not investment advice.</div>
         </div></body></html>"""
-    )
+    return subj, html
 
 # ═══════════════════════════════════════════════════════════════
-# 发送邮件
+# 发送邮件 — 使用 send_message() 避免编码问题
 # ═══════════════════════════════════════════════════════════════
 def send_email(subject, html):
     sender   = os.environ["EMAIL_SENDER"]
     password = os.environ["EMAIL_PASSWORD"]
     receiver = os.environ["EMAIL_RECEIVER"]
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = Header(subject, "utf-8").encode()
+    msg["Subject"] = subject
     msg["From"]    = sender
     msg["To"]      = receiver
     msg.attach(MIMEText(html, "html", "utf-8"))
@@ -385,10 +376,10 @@ def send_email(subject, html):
         with smtplib.SMTP("smtp.gmail.com", 587) as s:
             s.starttls()
             s.login(sender, password)
-            s.sendmail(sender, receiver, msg.as_string())
-        log.info(f"✅ 邮件已发送：{subject}")
+            s.send_message(msg)   # send_message 自动处理编码，不用 as_string()
+        log.info(f"Email sent: {subject}")
     except Exception as e:
-        log.error(f"❌ 邮件发送失败: {e}")
+        log.error(f"Email failed: {e}")
         sys.exit(1)
 
 # ═══════════════════════════════════════════════════════════════
@@ -399,9 +390,8 @@ def main():
     state    = load_state()
     cooldown = cfg["cooldown"]["same_alert_cooldown_minutes"]
 
-    # ── 每日汇总模式 ──────────────────────────────────────────
     if REPORT_MODE:
-        log.info("=== 每日汇总模式 ===")
+        log.info("=== Daily Report Mode ===")
         stock_rows = []
         for item in cfg["watchlist"]["stocks"]:
             d = fetch_stock(item["symbol"])
@@ -432,8 +422,7 @@ def main():
         send_email(subj, html)
         return
 
-    # ── 实时异动检测模式 ──────────────────────────────────────
-    log.info("=== 异动检测模式 ===")
+    log.info("=== Alert Check Mode ===")
     all_alerts = []
 
     for item in cfg["watchlist"]["stocks"]:
@@ -442,7 +431,6 @@ def main():
             log.info(f"  {item['symbol']}: ${d['price']} ({d['pct_change']:+.2f}%)")
             all_alerts.extend(check_stock(item, d, state, cooldown))
 
-    # MNVT 折溢价检测
     mnvt_cfg = cfg.get("mnvt_nav", {})
     if mnvt_cfg.get("enabled"):
         nav    = fetch_mnvt_nav()
@@ -462,9 +450,9 @@ def main():
             mark(state, a["key"])
         subj, html = alert_email(all_alerts)
         send_email(subj, html)
-        log.info(f"共触发 {len(all_alerts)} 条异动提醒")
+        log.info(f"Alerts sent: {len(all_alerts)}")
     else:
-        log.info("无异动，本次检测结束")
+        log.info("No alerts triggered.")
 
     save_state(state)
 
