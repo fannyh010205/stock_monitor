@@ -16,6 +16,96 @@ watchlist:
         above: 32.0            # 示例：设为 50.0 则突破$50时提醒
         below: 30.0
 
+    - symbol: "RDW"
+      name: "Redwire Corporation"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "CLSK"
+      name: "CleanSpark"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "IONQ"
+      name: "IonQ"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "RCAT"
+      name: "Red Cat Holdings"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "NBIS"
+      name: "Nebius Group"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "FLNC"
+      name: "Fluence Energy"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "SMCI"
+      name: "Super Micro Computer"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "SMR"
+      name: "NuScale Power"
+      type: "stock"
+      alert_pct: 5.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "PGY"
+      name: "Pagaya Technologies"
+      type: "stock"
+      alert_pct: 5.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "CHA"
+      name: "Chagee Holdings"
+      type: "stock"
+      alert_pct: 5.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+        
     - symbol: "GBTC"
       name: "Grayscale Bitcoin Trust"
       type: "etf"
@@ -29,6 +119,15 @@ watchlist:
       name: "Micron Technology"
       type: "stock"
       alert_pct: 3.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
+    - symbol: "SPCX"
+      name: "SpaceX"
+      type: "stock"
+      alert_pct: 4.0
       volume_multiplier: 2.0
       price_alerts:
         above: null
@@ -52,6 +151,15 @@ watchlist:
         above: null
         below: null
 
+    - symbol: "600487.SS"
+      name: "Hengtong Optic-Electric"
+      type: "stock"
+      alert_pct: 4.0
+      volume_multiplier: 2.0
+      price_alerts:
+        above: null
+        below: null
+
   crypto:
     - symbol: "bitcoin"
       ticker: "BTC"
@@ -64,7 +172,7 @@ watchlist:
     - symbol: "ethereum"
       ticker: "ETH"
       name: "Ethereum"
-      alert_pct: 3.0
+      alert_pct: 3.5
       price_alerts:
         above: null
         below: null
@@ -72,7 +180,7 @@ watchlist:
     - symbol: "cardano"
       ticker: "ADA"
       name: "Cardano"
-      alert_pct: 3.0
+      alert_pct: 3.5
       price_alerts:
         above: null
         below: null
@@ -80,8 +188,8 @@ watchlist:
 # MNVT 折溢价监控
 mnvt_nav:
   enabled: true
-  discount_alert_pct: -1.5    # 折价超过 1.5% → 提醒买入机会
-  premium_alert_pct: 1.5      # 溢价超过 2.0% → 提醒风险
+  discount_alert_pct: -1.5    # 折价超过 → 提醒买入机会
+  premium_alert_pct: 1.5      # 溢价超过 → 提醒风险
 
 # 同一标的同类报警冷却时间（分钟）
 # 防止5分钟轮询期间反复发同一条提醒
