@@ -164,7 +164,7 @@ watchlist:
     - symbol: "bitcoin"
       ticker: "BTC"
       name: "Bitcoin"
-      alert_pct: 4.0
+      alert_pct: 3.0
       price_alerts:
         above: 70000            # 例如：100000
         below: 60000            # 例如：60000
@@ -172,7 +172,7 @@ watchlist:
     - symbol: "ethereum"
       ticker: "ETH"
       name: "Ethereum"
-      alert_pct: 3.5
+      alert_pct: 3.0
       price_alerts:
         above: null
         below: null
@@ -180,7 +180,7 @@ watchlist:
     - symbol: "cardano"
       ticker: "ADA"
       name: "Cardano"
-      alert_pct: 3.5
+      alert_pct: 3.0
       price_alerts:
         above: null
         below: null
