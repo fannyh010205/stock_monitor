@@ -643,17 +643,60 @@ def main():
     log.info("=== Alert Check Mode ===")
     all_alerts = []
 
+    # for item in cfg["watchlist"]["stocks"]:
+    #     d = fetch_stock(item["symbol"])
+    #     if d:
+    #         log.info(f"  {item['symbol']}: ${d['price']} ({d['pct_change']:+.2f}%)")
+    #         all_alerts.extend(check_stock(item, d, state, cooldown))
+
+    # mnvt_cfg = cfg.get("mnvt_nav", {})
+    # if mnvt_cfg.get("enabled"):
+    #     nav    = fetch_mnvt_nav()
+    #     mnvt_d = fetch_stock("MNVT")
+    #     all_alerts.extend(check_mnvt_nav_spread(mnvt_d, nav, mnvt_cfg, state, cooldown))
+
+    mnvt_cfg = cfg.get("mnvt_nav", {})
+    mnvt_d   = fetch_stock("MNVT")
+    nav      = fetch_mnvt_nav()
+
+    if mnvt_d:
+        log.info(f"  MNVT: ${mnvt_d['price']} ({mnvt_d['pct_change']:+.2f}%)")
+
+    mnvt_item = next((s for s in cfg["watchlist"]["stocks"] if s["symbol"] == "MNVT"), None)
+    mnvt_price_alerts = check_stock(mnvt_item, mnvt_d, state, cooldown) if mnvt_item else []
+
+    nav_alerts = []
+    if mnvt_cfg.get("enabled") and nav and mnvt_d and mnvt_d.get("price"):
+        spread = (mnvt_d["price"] - nav) / nav * 100
+        disc_t = mnvt_cfg.get("discount_alert_pct", -1.5)
+        prem_t = mnvt_cfg.get("premium_alert_pct", 2.0)
+        if spread <= disc_t or spread >= prem_t:
+            nav_alerts = check_mnvt_nav_spread(mnvt_d, nav, mnvt_cfg, state, cooldown)
+
+    if mnvt_price_alerts and nav_alerts:
+        spread = (mnvt_d["price"] - nav) / nav * 100
+        combined = mnvt_price_alerts[0].copy()
+        combined["detail"] = (
+            f"{mnvt_d['pct_change']:+.2f}%, now ${mnvt_d['price']:.2f} | "
+            f"NAV ${nav:.2f}, spread {spread:+.2f}% "
+            f"({'discount - potential buy' if spread < 0 else 'premium - watch risk'})"
+        )
+        combined["type"] = "Price Move + NAV Discount" if spread < 0 else "Price Move + NAV Premium"
+        all_alerts.append(combined)
+        for a in nav_alerts:
+            mark(state, a["key"])
+    else:
+        all_alerts.extend(mnvt_price_alerts)
+        all_alerts.extend(nav_alerts)
+
     for item in cfg["watchlist"]["stocks"]:
+        if item["symbol"] == "MNVT":
+            continue
         d = fetch_stock(item["symbol"])
         if d:
             log.info(f"  {item['symbol']}: ${d['price']} ({d['pct_change']:+.2f}%)")
             all_alerts.extend(check_stock(item, d, state, cooldown))
-
-    mnvt_cfg = cfg.get("mnvt_nav", {})
-    if mnvt_cfg.get("enabled"):
-        nav    = fetch_mnvt_nav()
-        mnvt_d = fetch_stock("MNVT")
-        all_alerts.extend(check_mnvt_nav_spread(mnvt_d, nav, mnvt_cfg, state, cooldown))
+        
 
     cg_ids = [c["symbol"] for c in cfg["watchlist"]["crypto"]]
     cg     = fetch_crypto(cg_ids)
