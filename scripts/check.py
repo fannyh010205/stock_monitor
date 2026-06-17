@@ -531,8 +531,7 @@ Respond with JSON only."""
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            max_tokens=600,
             messages=[{"role": "user", "content": prompt}]
         )
         text = ""
@@ -604,7 +603,7 @@ Be specific, use actual numbers from the data. Respond with JSON only."""
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=800,
+            max_tokens=500,
             messages=[{"role": "user", "content": prompt}]
         )
         text = response.content[0].text.strip()
@@ -894,34 +893,17 @@ def main():
         save_state(state)
         return
 
-    # Fetch news for each alerted symbol
-    log.info(f"{len(all_alerts)} alerts triggered, fetching news + AI analysis...")
+    # Fetch news only (free, no AI call)
+    log.info(f"{len(all_alerts)} alerts triggered, fetching news...")
     for alert in all_alerts:
         sym = alert["symbol"]
         alert["news"] = fetch_news(sym)
         log.info(f"  News fetched for {sym}: {len(alert['news'])} items")
 
-    # Build market context string for AI
-    spy_d = fetch_stock("SPY")
-    qqq_d = fetch_stock("QQQ")
-    btc_d = fetch_crypto(["bitcoin"]).get("bitcoin", {})
-    market_context = (
-        f"SPY: {spy_d['pct_change']:+.2f}% today" if spy_d else "SPY: N/A"
-    ) + " | " + (
-        f"QQQ: {qqq_d['pct_change']:+.2f}% today" if qqq_d else "QQQ: N/A"
-    ) + " | " + (
-        f"BTC: {btc_d.get('usd_24h_change', 0):+.2f}% 24h" if btc_d else "BTC: N/A"
-    ) + " | " + (
-        f"Fear & Greed: {fg['value']} ({fg['label']})" if fg else "Fear & Greed: N/A"
-    )
-
-    # AI analysis
-    analyses = ai_analyze(all_alerts, market_context)
-
-    # Mark and send
+    # Mark and send (no AI analysis in alert emails)
     for a in all_alerts:
         mark(state, a["key"])
-    subj, html = alert_email(all_alerts, analyses, fg)
+    subj, html = alert_email(all_alerts, {}, fg)
     send_email(subj, html)
     log.info(f"Alert email sent with {len(all_alerts)} alerts.")
 
