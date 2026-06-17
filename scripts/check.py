@@ -492,7 +492,133 @@ def pct_span_plain(pct):
     cls   = "up" if pct > 0 else ("dn" if pct < 0 else "")
     return f'<span class="{cls}">{arrow} {abs(pct):.2f}%</span>'
 
-def daily_email(stock_rows, crypto_rows, nav_info, holdings, fg):
+def fetch_upcoming_events(symbols):
+    """Use Claude with web search to find upcoming market events."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {}
+    client = anthropic.Anthropic(api_key=api_key)
+    symbol_list = ", ".join(symbols)
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    prompt = f"""Today is {today}. Search the web and find upcoming market events in the next 5 days that are relevant to these stocks/assets: {symbol_list}, plus BTC, ETH, ADA, and the broader US market (SPY, QQQ).
+
+Focus on:
+1. Earnings reports for any of these companies
+2. Fed meetings, CPI, PPI, jobs data, or other macro events
+3. Major analyst upgrades/downgrades or price target changes
+4. Industry conferences or product launches
+5. Regulatory decisions affecting these companies
+
+For each event found, briefly state the potential impact on the relevant holdings.
+
+Respond in this JSON format only:
+{{
+  "events": [
+    {{
+      "date": "2026-06-17",
+      "event": "Brief event description",
+      "affects": "SYMBOL or MACRO",
+      "impact": "bullish/bearish/neutral",
+      "note": "One sentence on why this matters"
+    }}
+  ],
+  "summary": "One sentence overall outlook for the next 5 days"
+}}
+
+If no relevant events found, return {{"events": [], "summary": "No major scheduled events in the next 5 days."}}
+Respond with JSON only."""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}]
+        )
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text = block.text.strip()
+                break
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return json.loads(text.strip())
+    except Exception as e:
+        log.warning(f"Event fetch failed: {e}")
+        return {"events": [], "summary": ""}
+
+
+def ai_daily_summary(stock_rows, crypto_rows, nav_info, fg):
+    """Generate AI daily market summary and actionable insights."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {}
+    client = anthropic.Anthropic(api_key=api_key)
+
+    stocks_text = "\n".join(
+        f"- {r['symbol']} ({r['name']}): ${r['price']:.2f}, {r['pct_change']:+.2f}% today"
+        + (f", 52w range ${r.get('low52',0):.0f}-${r.get('high52',0):.0f}" if r.get('high52') else "")
+        for r in stock_rows
+    )
+    crypto_text = "\n".join(
+        f"- {r['ticker']}: ${r['price']:,.2f}, {r['pct_change']:+.2f}% 24h"
+        for r in crypto_rows
+    )
+    nav_text = ""
+    if nav_info:
+        nav_text = f"MNVT price ${nav_info['price']:.2f} vs NAV ${nav_info['nav']:.2f}, spread {nav_info['spread']:+.2f}%"
+    fg_text = f"Fear & Greed Index: {fg['value']} ({fg['label']})" if fg else ""
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+
+    prompt = f"""You are a professional portfolio analyst. Today is {today}.
+
+Here is the portfolio data for today:
+
+STOCKS & ETFs:
+{stocks_text}
+
+CRYPTO:
+{crypto_text}
+
+{nav_text}
+{fg_text}
+
+The investor's core positions are MNVT ETF (their main ETF holding), BTC, GBTC, and MU. The MNVT holdings include RDW, CLSK, IONQ, RCAT, NBIS, FLNC, SMCI, SMR, PGY, CHA, SPCX.
+
+Please provide a concise daily briefing in this JSON format:
+{{
+  "market_overview": "2-3 sentences on today's overall market action and key drivers",
+  "portfolio_highlights": "2-3 sentences on the most notable movers in this portfolio today and why they matter",
+  "mnvt_insight": "1-2 sentences specifically on MNVT: NAV spread opportunity or risk, and whether the current discount/premium warrants action",
+  "crypto_outlook": "1-2 sentences on BTC/ETH/ADA momentum and what to watch",
+  "action_items": [
+    "Specific actionable item 1",
+    "Specific actionable item 2"
+  ]
+}}
+
+Be specific, use actual numbers from the data. Respond with JSON only."""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return json.loads(text.strip())
+    except Exception as e:
+        log.warning(f"AI daily summary failed: {e}")
+        return {}
+
+
+def daily_email(stock_rows, crypto_rows, nav_info, holdings, fg, ai_summary=None, events=None):
     now   = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
     today = datetime.now(ET).strftime("%Y-%m-%d")
 
@@ -557,12 +683,77 @@ def daily_email(stock_rows, crypto_rows, nav_info, holdings, fg):
           <table style="max-width:300px"><thead><tr><th>Symbol</th><th>Weight</th></tr></thead>
           <tbody>{h_rows}</tbody></table></div>"""
 
+    # AI daily summary block
+    ai_section = ""
+    if ai_summary:
+        items_html = "".join(
+            f'<li style="margin:4px 0;color:#1b5e20">{item}</li>'
+            for item in ai_summary.get("action_items", [])
+        )
+        ai_section = f"""
+        <div style="margin:0 24px 16px;padding:16px 20px;background:#f8f9ff;
+             border-radius:8px;border-left:4px solid #3f51b5">
+          <div style="font-size:13px;font-weight:700;color:#1a237e;margin-bottom:10px">
+            AI Daily Briefing</div>
+          <div style="font-size:13px;color:#333;margin-bottom:8px">
+            <b>Market Overview:</b> {ai_summary.get('market_overview','')}</div>
+          <div style="font-size:13px;color:#333;margin-bottom:8px">
+            <b>Portfolio Highlights:</b> {ai_summary.get('portfolio_highlights','')}</div>
+          <div style="font-size:13px;color:#333;margin-bottom:8px">
+            <b>MNVT:</b> {ai_summary.get('mnvt_insight','')}</div>
+          <div style="font-size:13px;color:#333;margin-bottom:10px">
+            <b>Crypto:</b> {ai_summary.get('crypto_outlook','')}</div>
+          <div style="font-size:12px;font-weight:700;color:#555;margin-bottom:4px">
+            Action Items:</div>
+          <ul style="margin:0;padding-left:18px;font-size:13px">{items_html}</ul>
+        </div>"""
+
+    # Upcoming events block
+    events_section = ""
+    if events and events.get("events"):
+        impact_color = {"bullish": "#2e7d32", "bearish": "#c62828", "neutral": "#555"}
+        event_rows = "".join(f"""
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;
+                font-size:12px;color:#888;white-space:nowrap">{e['date']}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;
+                font-size:13px;font-weight:600">{e['affects']}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px">
+              {e['event']}<br>
+              <span style="font-size:12px;color:#666">{e.get('note','')}</span></td>
+            <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;
+                font-weight:600;color:{impact_color.get(e['impact'],'#555')};
+                white-space:nowrap">{e['impact'].upper()}</td>
+          </tr>""" for e in events["events"])
+        summary_text = events.get("summary", "")
+        events_section = f"""
+        <div style="padding:0 24px 16px">
+          <div style="font-size:12px;color:#888;font-weight:600;
+               text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+            Upcoming Events (Next 5 Days)</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#f9f9f9">
+              <th style="padding:8px 12px;text-align:left;color:#777;font-size:12px">Date</th>
+              <th style="padding:8px 12px;text-align:left;color:#777;font-size:12px">Symbol</th>
+              <th style="padding:8px 12px;text-align:left;color:#777;font-size:12px">Event</th>
+              <th style="padding:8px 12px;text-align:left;color:#777;font-size:12px">Impact</th>
+            </tr></thead>
+            <tbody>{event_rows}</tbody>
+          </table>
+          <div style="font-size:12px;color:#666;margin-top:8px;
+               padding:8px 12px;background:#fffde7;border-radius:4px">
+            {summary_text}</div>
+        </div>"""
+        
+
     subj = f"Daily Market Summary {today}"
     html = f"""<html><head><style>{STYLE}</style></head><body>
       <div class="card">
         <div class="header" style="background:#0d47a1">
           <h2>Daily Market Summary</h2><p>{now}</p></div>
         {fg_section}
+        {ai_section}
+        {events_section}
         {nav_section}
         <div class="section">
           <div class="section-title">Stocks / ETFs</div>
@@ -636,24 +827,16 @@ def main():
             nav_info = {"price": mnvt_d["price"], "nav": nav, "spread": round(spread, 2)}
 
         holdings = load_holdings()
-        subj, html = daily_email(stock_rows, crypto_rows, nav_info, holdings, fg)
+        all_symbols = [s["symbol"] for s in cfg["watchlist"]["stocks"]]
+        ai_sum    = ai_daily_summary(stock_rows, crypto_rows, nav_info, fg)
+        events    = fetch_upcoming_events(all_symbols)
+        subj, html = daily_email(stock_rows, crypto_rows, nav_info, holdings, fg,
+                                  ai_summary=ai_sum, events=events)
         send_email(subj, html)
         return
 
     log.info("=== Alert Check Mode ===")
     all_alerts = []
-
-    # for item in cfg["watchlist"]["stocks"]:
-    #     d = fetch_stock(item["symbol"])
-    #     if d:
-    #         log.info(f"  {item['symbol']}: ${d['price']} ({d['pct_change']:+.2f}%)")
-    #         all_alerts.extend(check_stock(item, d, state, cooldown))
-
-    # mnvt_cfg = cfg.get("mnvt_nav", {})
-    # if mnvt_cfg.get("enabled"):
-    #     nav    = fetch_mnvt_nav()
-    #     mnvt_d = fetch_stock("MNVT")
-    #     all_alerts.extend(check_mnvt_nav_spread(mnvt_d, nav, mnvt_cfg, state, cooldown))
 
     mnvt_cfg = cfg.get("mnvt_nav", {})
     mnvt_d   = fetch_stock("MNVT")
