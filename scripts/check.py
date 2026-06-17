@@ -58,9 +58,13 @@ def fetch_stock(symbol):
             pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
 
             # 52-week high/low
-            h52 = t.history(period="1y", interval="1d")
-            high52 = float(h52["High"].max()) if len(h52) > 0 else None
-            low52  = float(h52["Low"].min())  if len(h52) > 0 else None
+            if REPORT_MODE:
+                h52   = t.history(period="1y", interval="1d")
+                high52 = float(h52["High"].max()) if len(h52) > 0 else None
+                low52  = float(h52["Low"].min())  if len(h52) > 0 else None
+            else:
+                high52 = None
+                low52  = None
 
             return {
                 "symbol":     symbol,
