@@ -40,6 +40,7 @@ jobs:
           EMAIL_SENDER:   ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
 
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
